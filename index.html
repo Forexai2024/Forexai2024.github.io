@@ -10,150 +10,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.14.0/dist/tf.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
-    <style>
-          :root {
-            --primary-color: #1e88e5;
-            --secondary-color: #43a047;
-            --background-color: #f5f5f5;
-            --text-color: #333;
-            --chart-background: #fff;
-            --card-background: #fff;
-        }
-
-        body {
-            font-family: 'Roboto', sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: var(--background-color);
-            color: var(--text-color);
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        header {
-            background-color: var(--primary-color);
-            color: white;
-            padding: 1rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        nav ul {
-            list-style-type: none;
-            display: flex;
-            gap: 20px;
-        }
-
-        nav ul li a {
-            color: white;
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        main {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .chart-container {
-            background-color: var(--chart-background);
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .dashboard {
-            background-color: var(--card-background);
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .data-table {
-            margin-top: 20px;
-            background-color: var(--card-background);
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            overflow-x: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th, td {
-            text-align: left;
-            padding: 12px;
-            border-bottom: 1px solid #ddd;
-        }
-
-        th {
-            background-color: var(--primary-color);
-            color: white;
-        }
-
-        #symbolSelector {
-            padding: 8px;
-            font-size: 16px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-
-        #updateButton {
-            background-color: var(--secondary-color);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            font-size: 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-
-        #updateButton:hover {
-            background-color: #2e7d32;
-        }
-
-        #loading {
-            display: none;
-            color: var(--primary-color);
-            font-weight: bold;
-        }
-
-        .card {
-            background-color: var(--card-background);
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 15px;
-        }
-
-        .card h3 {
-            margin-top: 0;
-            color: var(--primary-color);
-        }
-
-        @media (max-width: 768px) {
-            main {
-                grid-template-columns: 1fr;
-            }
-        }
-    
-
-    </style>
+    <styles>
+        
+    </styles>
 </head>
 <body>
     <header>
@@ -225,71 +84,85 @@
             </table>
         </div>
     </div>
-    <script >
+   <script>
         let model, scaler;
 
-// Load the model and scaler files
-async function loadModelAndScaler() {
-    model = await tf.loadLayersModel('https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/model%2Fmodel.json?alt=media&token=4f116ed1-9bc5-4b97-b9fd-1d5a4f8c67d1'); // Change this URL
-    const response = await axios.get('URL_TO_YOUR_SCALER/scaler.json'); // Change this URL
-    scaler = response.data;
-}
+        // Load the model and scaler files
+        async function loadModelAndScaler() {
+            try {
+                model = await tf.loadLayersModel('https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/model%2Fmodel.json?alt=media&token=4f116ed1-9bc5-4b97-b9fd-1d5a4f8c67d1');
+                const response = await axios.get('https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/model%2Fscaler.json?alt=media&token=4513cc14-494c-4b1a-a311-b8f745799910'); // Change this URL
+                scaler = response.data;
+                console.log('Model and scaler loaded successfully');
+            } catch (error) {
+                console.error('Error loading model or scaler:', error);
+            }
+        }
 
-function normalize(value, min, max) {
-    return (value - min) / (max - min);
-}
+        function normalize(value, min, max) {
+            return (value - min) / (max - min);
+        }
 
-function denormalize(value, min, max) {
-    return value * (max - min) + min;
-}
+        function denormalize(value, min, max) {
+            return value * (max - min) + min;
+        }
 
-async function getAIPrediction(forexData) {
-    const input = forexData.map(entry => normalize(entry.close, scaler.min, scaler.max));
-    const inputTensor = tf.tensor2d([input], [1, input.length, 1]);
+        async function getAIPrediction(forexData) {
+            try {
+                const input = forexData.map(entry => normalize(entry.close, scaler.min, scaler.max));
+                const inputTensor = tf.tensor2d([input], [1, input.length, 1]);
 
-    const predictionTensor = model.predict(inputTensor);
-    const predictionArray = await predictionTensor.array();
+                const predictionTensor = model.predict(inputTensor);
+                const predictionArray = await predictionTensor.array();
 
-    const predictedPrices = predictionArray[0].map(price => denormalize(price, scaler.min, scaler.max));
-    return predictedPrices;
-}
+                const predictedPrices = predictionArray[0].map(price => denormalize(price, scaler.min, scaler.max));
+                return predictedPrices;
+            } catch (error) {
+                console.error('Error getting AI prediction:', error);
+                return [];
+            }
+        }
 
-// Replace the existing updateForexData function
-async function updateForexData() {
-    try {
-        document.getElementById('loading').style.display = 'block';
-        const symbol = document.getElementById('symbolSelector').value;
-        const forexData = await getLatestForexData(symbol); // Assume this function is defined elsewhere
-        if (forexData.length === 0) return;
+        // Replace the existing updateForexData function
+        async function updateForexData() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                const symbol = document.getElementById('symbolSelector').value;
+                const forexData = await getLatestForexData(symbol); // Assume this function is defined elsewhere
+                if (forexData.length === 0) return;
 
-        const latest = forexData[forexData.length - 1];
-        document.getElementById('closePrice').textContent = latest.close;
-        document.getElementById('change').textContent = (latest.close - forexData[forexData.length - 2].close).toFixed(4);
-        document.getElementById('percentChange').textContent = ((latest.close / forexData[forexData.length - 2].close - 1) * 100).toFixed(2) + '%';
+                const latest = forexData[forexData.length - 1];
+                document.getElementById('closePrice').textContent = latest.close;
+                document.getElementById('change').textContent = (latest.close - forexData[forexData.length - 2].close).toFixed(4);
+                document.getElementById('percentChange').textContent = ((latest.close / forexData[forexData.length - 2].close - 1) * 100).toFixed(2) + '%';
 
-        drawChart(forexData); // Assume this function is defined elsewhere
-        await storeDataInFirestore(symbol, forexData); // Assume this function is defined elsewhere
+                drawChart(forexData); // Assume this function is defined elsewhere
+                await storeDataInFirestore(symbol, forexData); // Assume this function is defined elsewhere
 
-        const aiPrediction = await getAIPrediction(forexData);
-        document.getElementById('aiPrediction').textContent = `AI Prediction: ${aiPrediction.join(', ')}`;
+                const aiPrediction = await getAIPrediction(forexData);
+                if (aiPrediction.length > 0) {
+                    document.getElementById('aiPrediction').textContent = `AI Prediction: ${aiPrediction.join(', ')}`;
+                } else {
+                    document.getElementById('aiPrediction').textContent = 'AI Prediction: Error in prediction';
+                }
 
-        const indicators = calculateIndicators(forexData); // Assume this function is defined elsewhere
-        const tradeSignal = await getTradeSignal(latest.close, aiPrediction, indicators.sma, indicators.rsi, indicators.macdLine, indicators.signalLine); // Assume this function is defined elsewhere
-        document.getElementById('tradeSignal').textContent = `Trade Signal: ${tradeSignal.signal}, Hold for: ${tradeSignal.holdTime}`;
+                const indicators = calculateIndicators(forexData); // Assume this function is defined elsewhere
+                const tradeSignal = await getTradeSignal(latest.close, aiPrediction, indicators.sma, indicators.rsi, indicators.macdLine, indicators.signalLine); // Assume this function is defined elsewhere
+                document.getElementById('tradeSignal').textContent = `Trade Signal: ${tradeSignal.signal}, Hold for: ${tradeSignal.holdTime}`;
 
-        const riskManagement = getRiskManagement(latest.close, aiPrediction); // Assume this function is defined elsewhere
-        document.getElementById('riskManagement').textContent = `Risk Management: Stop Loss at ${riskManagement.stopLoss}, Take Profit at ${riskManagement.takeProfit}`;
+                const riskManagement = getRiskManagement(latest.close, aiPrediction); // Assume this function is defined elsewhere
+                document.getElementById('riskManagement').textContent = `Risk Management: Stop Loss at ${riskManagement.stopLoss}, Take Profit at ${riskManagement.takeProfit}`;
 
-    } catch (error) {
-        console.error('Error updating forex data:', error);
-        alert('Failed to update forex data.');
-    } finally {
-        document.getElementById('loading').style.display = 'none';
-    }
-}
+            } catch (error) {
+                console.error('Error updating forex data:', error);
+                alert('Failed to update forex data.');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
 
-document.getElementById('updateButton').addEventListener('click', updateForexData);
-loadModelAndScaler().then(updateForexData); // Load the model and scaler before the first update
+        document.getElementById('updateButton').addEventListener('click', updateForexData);
+        loadModelAndScaler().then(updateForexData); // Load the model and scaler before the first update
     </script>
 </body>
 </html>
