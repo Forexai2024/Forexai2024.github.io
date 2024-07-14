@@ -248,8 +248,8 @@
 
         async function loadModelAndScaler() {
             try {
-                model = await tf.loadLayersModel('https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/model%2Fmodel.json?alt=media&token=4f116ed1-9bc5-4b97-b9fd-1d5a4f8c67d1');
-                const response = await axios.get('https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/model%2Fscaler.json?alt=media&token=4513cc14-494c-4b1a-a311-b8f745799910');
+                model = await tf.loadLayersModel('https://github.com/Forexai2024/Forexai2024.github.io/blob/main/model.json');
+                const response = await axios.get('https://github.com/Forexai2024/Forexai2024.github.io/blob/main/scaler.json');
                 scaler = response.data;
                 console.log('Model and scaler loaded successfully');
             } catch (error) {
@@ -267,13 +267,13 @@
 
         async function getAIPrediction(forexData) {
             try {
-                const input = forexData.map(entry => normalize(entry.close, scaler.min, scaler.max));
+                const input = forexData.map(entry => normalize(entry.close, scaler.min[0], scaler.max[0]));
                 const inputTensor = tf.tensor2d([input], [1, input.length, 1]);
 
                 const predictionTensor = model.predict(inputTensor);
                 const predictionArray = await predictionTensor.array();
 
-                const predictedPrices = predictionArray[0].map(price => denormalize(price, scaler.min, scaler.max));
+                const predictedPrices = predictionArray[0].map(price => denormalize(price, scaler.min[0], scaler.max[0]));
                 return predictedPrices;
             } catch (error) {
                 console.error('Error getting AI prediction:', error);
@@ -281,40 +281,11 @@
             }
         }
 
-        function calculateIndicators(forexData) {
-            // Placeholder for indicator calculations
-            // Implement your SMA, RSI, MACD, etc.
-            return {
-                sma: 1.1, // Example
-                rsi: 1.2, // Example
-                macdLine: 1.3, // Example
-                signalLine: 1.4 // Example
-            };
-        }
-
-        async function getTradeSignal(latestClose, aiPrediction, sma, rsi, macdLine, signalLine) {
-            // Placeholder for trade signal logic
-            if (latestClose > sma && rsi < 30 && macdLine > signalLine) {
-                return { signal: 'Buy', holdTime: 'Short' };
-            } else if (latestClose < sma && rsi > 70 && macdLine < signalLine) {
-                return { signal: 'Sell', holdTime: 'Short' };
-            } else {
-                return { signal: 'Hold', holdTime: 'Neutral' };
-            }
-        }
-
-        function getRiskManagement(latestClose, aiPrediction) {
-            // Placeholder for risk management logic
-            const stopLoss = latestClose * 0.95; // Example
-            const takeProfit = latestClose * 1.05; // Example
-            return { stopLoss, takeProfit };
-        }
-
         async function updateForexData() {
             try {
                 document.getElementById('loading').style.display = 'block';
                 const symbol = document.getElementById('symbolSelector').value;
-                const forexData = await getLatestForexData(symbol); // Implement this function
+                const forexData = await getLatestForexData(symbol);
                 if (forexData.length === 0) return;
 
                 const latest = forexData[forexData.length - 1];
@@ -322,8 +293,8 @@
                 document.getElementById('change').textContent = (latest.close - forexData[forexData.length - 2].close).toFixed(4);
                 document.getElementById('percentChange').textContent = ((latest.close / forexData[forexData.length - 2].close - 1) * 100).toFixed(2) + '%';
 
-                drawChart(forexData); // Implement this function
-                await storeDataInFirestore(symbol, forexData); // Implement this function
+                drawChart(forexData);
+                await storeDataInFirestore(symbol, forexData);
 
                 const aiPrediction = await getAIPrediction(forexData);
                 if (aiPrediction.length > 0) {
@@ -343,7 +314,7 @@
                 console.error('Error updating forex data:', error);
                 alert('Failed to update forex data.');
             } finally {
-                document.getElementById('loading').style.display ='none';
+                document.getElementById('loading').style.display = 'none';
             }
         }
 
@@ -354,29 +325,29 @@
         });
 
         async function getLatestForexData(symbol) {
-    const twelveDataApiKey = '262b3ecc49434af287fd0c93647418cb';
-    const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&apikey=${twelveDataApiKey}`;
-    
-    try {
-        const response = await axios.get(url);
-        const forexData = response.data.values.map(item => ({
-            date: item.datetime,
-            open: parseFloat(item.open),
-            high: parseFloat(item.high),
-            low: parseFloat(item.low),
-            close: parseFloat(item.close),
-            volume: parseInt(item.volume, 10)
-        }));
-        return forexData.reverse();  // Ensure data is in chronological order
-    } catch (error) {
-        console.error('Error fetching latest forex data:', error);
-        return [];
-    }
-}
+            const twelveDataApiKey = '262b3ecc49434af287fd0c93647418cb';
+            const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&apikey=${twelveDataApiKey}`;
+
+            try {
+                const response = await axios.get(url);
+                const forexData = response.data.values.map(item => ({
+                    date: item.datetime,
+                    open: parseFloat(item.open),
+                    high: parseFloat(item.high),
+                    low: parseFloat(item.low),
+                    close: parseFloat(item.close),
+                    volume: parseInt(item.volume, 10)
+                }));
+                return forexData.reverse(); // Ensure data is in chronological order
+            } catch (error) {
+                console.error('Error fetching latest forex data:', error);
+                return [];
+            }
+        }
 
         async function storeDataInFirestore(symbol, forexData) {
             try {
-                const firestoreUrl = 'https://firestore.googleapis.com/v1/projects/forex-f333c/databases/(default)/documents/forexData';
+                const firestoreUrl = 'https://firestore.googleapis.com/v1/projects/YOUR_PROJECT_ID/databases/(default)/documents/forexData';
                 await axios.post(firestoreUrl, {
                     symbol,
                     data: forexData
@@ -416,4 +387,4 @@
         }
     </script>
 </body>
-</html>
+    </html>
