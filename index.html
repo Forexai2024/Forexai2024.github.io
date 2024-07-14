@@ -225,14 +225,31 @@
             </table>
         </div>
     </div>
-   <script>
+<script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-analytics.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDmO0_mJsj8gMCWnvHGiL9QnGKe__aTxuo",
+            authDomain: "forex-f333c.firebaseapp.com",
+            projectId: "forex-f333c",
+            storageBucket: "forex-f333c.appspot.com",
+            messagingSenderId: "80013347294",
+            appId: "1:80013347294:web:a979310b38e859629e754f",
+            measurementId: "G-CFEX70E52F"
+        };
+
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const analytics = getAnalytics(app);
         let model, scaler;
 
-        // Load the model and scaler files
         async function loadModelAndScaler() {
             try {
                 model = await tf.loadLayersModel('https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/model%2Fmodel.json?alt=media&token=4f116ed1-9bc5-4b97-b9fd-1d5a4f8c67d1');
-                const response = await axios.get('https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/model%2Fscaler.json?alt=media&token=4513cc14-494c-4b1a-a311-b8f745799910'); // Change this URL
+                const response = await axios.get('https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/model%2Fscaler.json?alt=media&token=4513cc14-494c-4b1a-a311-b8f745799910');
                 scaler = response.data;
                 console.log('Model and scaler loaded successfully');
             } catch (error) {
@@ -264,12 +281,40 @@
             }
         }
 
-        // Replace the existing updateForexData function
+        function calculateIndicators(forexData) {
+            // Placeholder for indicator calculations
+            // Implement your SMA, RSI, MACD, etc.
+            return {
+                sma: 1.1, // Example
+                rsi: 1.2, // Example
+                macdLine: 1.3, // Example
+                signalLine: 1.4 // Example
+            };
+        }
+
+        async function getTradeSignal(latestClose, aiPrediction, sma, rsi, macdLine, signalLine) {
+            // Placeholder for trade signal logic
+            if (latestClose > sma && rsi < 30 && macdLine > signalLine) {
+                return { signal: 'Buy', holdTime: 'Short' };
+            } else if (latestClose < sma && rsi > 70 && macdLine < signalLine) {
+                return { signal: 'Sell', holdTime: 'Short' };
+            } else {
+                return { signal: 'Hold', holdTime: 'Neutral' };
+            }
+        }
+
+        function getRiskManagement(latestClose, aiPrediction) {
+            // Placeholder for risk management logic
+            const stopLoss = latestClose * 0.95; // Example
+            const takeProfit = latestClose * 1.05; // Example
+            return { stopLoss, takeProfit };
+        }
+
         async function updateForexData() {
             try {
                 document.getElementById('loading').style.display = 'block';
                 const symbol = document.getElementById('symbolSelector').value;
-                const forexData = await getLatestForexData(symbol); // Assume this function is defined elsewhere
+                const forexData = await getLatestForexData(symbol); // Implement this function
                 if (forexData.length === 0) return;
 
                 const latest = forexData[forexData.length - 1];
@@ -277,8 +322,8 @@
                 document.getElementById('change').textContent = (latest.close - forexData[forexData.length - 2].close).toFixed(4);
                 document.getElementById('percentChange').textContent = ((latest.close / forexData[forexData.length - 2].close - 1) * 100).toFixed(2) + '%';
 
-                drawChart(forexData); // Assume this function is defined elsewhere
-                await storeDataInFirestore(symbol, forexData); // Assume this function is defined elsewhere
+                drawChart(forexData); // Implement this function
+                await storeDataInFirestore(symbol, forexData); // Implement this function
 
                 const aiPrediction = await getAIPrediction(forexData);
                 if (aiPrediction.length > 0) {
@@ -287,23 +332,88 @@
                     document.getElementById('aiPrediction').textContent = 'AI Prediction: Error in prediction';
                 }
 
-                const indicators = calculateIndicators(forexData); // Assume this function is defined elsewhere
-                const tradeSignal = await getTradeSignal(latest.close, aiPrediction, indicators.sma, indicators.rsi, indicators.macdLine, indicators.signalLine); // Assume this function is defined elsewhere
+                const indicators = calculateIndicators(forexData);
+                const tradeSignal = await getTradeSignal(latest.close, aiPrediction, indicators.sma, indicators.rsi, indicators.macdLine, indicators.signalLine);
                 document.getElementById('tradeSignal').textContent = `Trade Signal: ${tradeSignal.signal}, Hold for: ${tradeSignal.holdTime}`;
 
-                const riskManagement = getRiskManagement(latest.close, aiPrediction); // Assume this function is defined elsewhere
+                const riskManagement = getRiskManagement(latest.close, aiPrediction);
                 document.getElementById('riskManagement').textContent = `Risk Management: Stop Loss at ${riskManagement.stopLoss}, Take Profit at ${riskManagement.takeProfit}`;
 
             } catch (error) {
                 console.error('Error updating forex data:', error);
                 alert('Failed to update forex data.');
             } finally {
-                document.getElementById('loading').style.display = 'none';
+                document.getElementById('loading').style.display ='none';
             }
         }
 
         document.getElementById('updateButton').addEventListener('click', updateForexData);
-        loadModelAndScaler().then(updateForexData); // Load the model and scaler before the first update
+
+        window.addEventListener('load', async () => {
+            await loadModelAndScaler();
+        });
+
+        async function getLatestForexData(symbol) {
+    const twelveDataApiKey = '262b3ecc49434af287fd0c93647418cb';
+    const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&apikey=${twelveDataApiKey}`;
+    
+    try {
+        const response = await axios.get(url);
+        const forexData = response.data.values.map(item => ({
+            date: item.datetime,
+            open: parseFloat(item.open),
+            high: parseFloat(item.high),
+            low: parseFloat(item.low),
+            close: parseFloat(item.close),
+            volume: parseInt(item.volume, 10)
+        }));
+        return forexData.reverse();  // Ensure data is in chronological order
+    } catch (error) {
+        console.error('Error fetching latest forex data:', error);
+        return [];
+    }
+}
+
+        async function storeDataInFirestore(symbol, forexData) {
+            try {
+                const firestoreUrl = 'https://firestore.googleapis.com/v1/projects/forex-f333c/databases/(default)/documents/forexData';
+                await axios.post(firestoreUrl, {
+                    symbol,
+                    data: forexData
+                });
+            } catch (error) {
+                console.error('Error storing data in Firestore:', error);
+            }
+        }
+
+        function drawChart(forexData) {
+            const ctx = document.getElementById('forexChart').getContext('2d');
+            const labels = forexData.map(entry => entry.date);
+            const data = {
+                labels: labels,
+                datasets: [{
+                    label: 'Close Price',
+                    data: forexData.map(entry => entry.close),
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1,
+                    fill: false,
+                }]
+            };
+            new Chart(ctx, {
+                type: 'line',
+                data: data,
+                options: {
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day'
+                            }
+                        }
+                    }
+                }
+            });
+        }
     </script>
 </body>
 </html>
