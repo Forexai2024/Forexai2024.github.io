@@ -10,7 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.14.0/dist/tf.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
-        <style>
+    <style>
            :root {
             --primary-color: #1e88e5;
             --secondary-color: #43a047;
@@ -226,214 +226,364 @@
             </table>
         </div>
     </div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-analytics.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-storage.js";
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-analytics.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-storage.js";
+const firebaseConfig = {
+    apiKey: "AIzaSyDmO0_mJsj8gMCWnvHGiL9QnGKe__aTxuo",
+    authDomain: "forex-f333c.firebaseapp.com",
+    projectId: "forex-f333c",
+    storageBucket: "forex-f333c.appspot.com",
+    messagingSenderId: "80013347294",
+    appId: "1:80013347294:web:a979310b38e859629e754f",
+    measurementId: "G-CFEX70E52F"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const analytics = getAnalytics(app);
+const storage = getStorage(app);
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyDmO0_mJsj8gMCWnvHGiL9QnGKe__aTxuo",
-            authDomain: "forex-f333c.firebaseapp.com",
-            projectId: "forex-f333c",
-            storageBucket: "forex-f333c.appspot.com",
-            messagingSenderId: "80013347294",
-            appId: "1:80013347294:web:a979310b38e859629e754f",
-            measurementId: "G-CFEX70E52F"
-        };
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const analytics = getAnalytics(app);
-        const storage = getStorage(app);
+let model;
+let forexChartInstance = null;
 
-        let model;
-        let forexChartInstance = null;
+async function fetchForexData(symbol) {
+    const twelveDataApiKey = '262b3ecc49434af287fd0c93647418cb';
+    const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1h&apikey=${twelveDataApiKey}`;
 
-        async function fetchForexData(symbol) {
-            const twelveDataApiKey = '262b3ecc49434af287fd0c93647418cb';
-            const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1h&apikey=${twelveDataApiKey}`;
+    try {
+        const response = await axios.get(url);
+        const forexData = response.data.values.map(item => ({
+            date: item.datetime,
+            open: parseFloat(item.open),
+            high: parseFloat(item.high),
+            low: parseFloat(item.low),
+            close: parseFloat(item.close),
+            volume: parseInt(item.volume, 10)
+        }));
+        return forexData.reverse();
+    } catch (error) {
+        console.error('Error fetching forex data:', error);
+        return [];
+    }
+}
 
-            try {
-                const response = await axios.get(url);
-                const forexData = response.data.values.map(item => ({
-                    date: item.datetime,
-                    open: parseFloat(item.open),
-                    high: parseFloat(item.high),
-                    low: parseFloat(item.low),
-                    close: parseFloat(item.close),
-                    volume: parseInt(item.volume, 10)
-                }));
-                return forexData.reverse();
-            } catch (error) {
-                console.error('Error fetching forex data:', error);
-                return [];
-            }
+async function uploadModelToFirebase() {
+    const modelArtifacts = await model.save(tf.io.withSaveHandler(async (artifacts) => artifacts));
+
+    const modelJSONRef = ref(storage, 'models/forex-model/model.json');
+    const modelWeightsRef = ref(storage, 'models/forex-model/group1-shard1of1.bin');
+
+    await uploadBytes(modelJSONRef, new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' }));
+    await uploadBytes(modelWeightsRef, new Blob([modelArtifacts.weightData], { type: 'application/octet-stream' }));
+
+    console.log('Model uploaded to Firebase Storage');
+}
+
+async function createAndTrainRNNModel(data) {
+    const tensorData = tf.tensor2d(data.map(d => [d.open, d.high, d.low, d.close]));
+    const normalizedData = tensorData.sub(tensorData.min()).div(tensorData.max().sub(tensorData.min()));
+
+    const timesteps = 10;
+    const inputShape = normalizedData.shape[0] - timesteps;
+    const X = [];
+    const y = [];
+
+    for (let i = 0; i < inputShape; i++) {
+        X.push(normalizedData.slice([i, 0], [timesteps, 4]).arraySync());
+        y.push(normalizedData.slice([i + timesteps, 3], [1, 1]).arraySync()[0]);
+    }
+
+    const XTensor = tf.tensor3d(X);
+    const yTensor = tf.tensor2d(y);
+
+    model = tf.sequential();
+    model.add(tf.layers.lstm({
+        units: 50,
+        returnSequences: true,
+        inputShape: [timesteps, 4],
+        kernelInitializer: 'glorotUniform'
+    }));
+    model.add(tf.layers.lstm({
+        units: 50,
+        kernelInitializer: 'glorotUniform'
+    }));
+    model.add(tf.layers.dense({
+        units: 1,
+        kernelInitializer: 'glorotUniform'
+    }));
+
+    model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+
+    await model.fit(XTensor, yTensor, { epochs: 10, batchSize: 32 });
+
+    // Save the model to local storage
+    await model.save('localstorage://my-rnn-model');
+    console.log('RNN model saved to local storage');
+    await uploadModelToFirebase();
+}
+
+async function predict(latestData) {
+    if (!model) {
+        await loadModelFromFirebase();
+    }
+
+    const input = tf.tensor2d(latestData.map(d => [d.open, d.high, d.low, d.close]));
+    const normalizedInput = input.sub(input.min()).div(input.max().sub(input.min()));
+    const reshapedInput = normalizedInput.reshape([1, input.shape[0], 4]);
+
+    const prediction = model.predict(reshapedInput);
+    return prediction.dataSync()[0];
+}
+
+async function loadModelFromFirebase() {
+    const modelURL = 'https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/models%2Fforex-model%2Fmodel.json?alt=media';
+    model = await tf.loadLayersModel(modelURL);
+    console.log('Model loaded from Firebase Storage');
+}
+
+async function updateForexData() {
+    try {
+        document.getElementById('loading').style.display = 'block';
+        const symbol = document.getElementById('symbolSelector').value;
+        const forexData = await fetchForexData(symbol);
+
+        if (forexData.length === 0) {
+            console.warn('No forex data fetched');
+            return;
         }
 
-        async function uploadModelToFirebase() {
-            const modelArtifacts = await model.save(tf.io.withSaveHandler(async (artifacts) => artifacts));
-
-            const modelJSONRef = ref(storage, 'models/forex-model/model.json');
-            const modelWeightsRef = ref(storage, 'models/forex-model/group1-shard1of1.bin');
-
-            await uploadBytes(modelJSONRef, new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' }));
-            await uploadBytes(modelWeightsRef, new Blob([modelArtifacts.weightData], { type: 'application/octet-stream' }));
-
-            console.log('Model uploaded to Firebase Storage');
+        if (!model) {
+            await loadModelFromFirebase();
+        } else {
+            await createAndTrainRNNModel(forexData);
         }
 
-        async function createAndTrainModel(data) {
-            const tensorData = tf.tensor2d(data.map(d => [d.open, d.high, d.low, d.close]));
-            const normalizedData = tensorData.sub(tensorData.min()).div(tensorData.max().sub(tensorData.min()));
+        const latest = forexData[forexData.length - 1];
+        const prediction = await predict(forexData.slice(-10)); // Use the last 10 data points for prediction
+        const { signal, confidence } = generateTradeSignalWithConfidence(prediction, forexData);
 
-            const timesteps = 10;
-            const inputShape = normalizedData.shape[0] - timesteps;
-            const X = [];
-            const y = [];
+        document.getElementById('closePrice').textContent = latest.close;
+        document.getElementById('change').textContent = (latest.close - forexData[forexData.length - 2].close).toFixed(2);
+        document.getElementById('percentChange').textContent = ((latest.close / forexData[forexData.length - 2].close - 1) * 100).toFixed(2) + '%';
+        document.getElementById('aiPrediction').textContent = `AI Prediction: ${prediction.toFixed(2)}`;
+        document.getElementById('tradeSignal').textContent = `Trade Signal: ${signal} (Confidence: ${(confidence * 100).toFixed(2)}%)`;
 
-            for (let i = 0; i < inputShape; i++) {
-                X.push(normalizedData.slice([i, 0], [timesteps, 4]).arraySync());
-                y.push(normalizedData.slice([i + timesteps, 3], [1, 1]).arraySync()[0]);
-            }
+        updateChart(forexData);
+        updateDataTable(forexData);
+    } catch (error) {
+        console.error('Error updating forex data:', error);
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
+}
 
-            const XTensor = tf.tensor3d(X);
-            const yTensor = tf.tensor2d(y);
+function updateChart(forexData) {
+    const ctx = document.getElementById('forexChart').getContext('2d');
+    const data = {
+        labels: forexData.map(d => d.date),
+        datasets: [{
+            label: 'Close Price',
+            data: forexData.map(d => d.close),
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 1,
+            fill: false
+        }]
+    };
 
-            model = tf.sequential();
-            model.add(tf.layers.lstm({
-                units: 50,
-                returnSequences: true,
-                inputShape: [timesteps, 4],
-                kernelInitializer: 'glorotUniform'
-            }));
-            model.add(tf.layers.lstm({
-                units: 50,
-                kernelInitializer: 'glorotUniform'
-            }));
-            model.add(tf.layers.dense({
-                units: 1,
-                kernelInitializer: 'glorotUniform'
-            }));
-
-            model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
-
-            await model.fit(XTensor, yTensor, { epochs: 10, batchSize: 32 });
-
-            await model.save('localstorage://my-model');
-            console.log('Model saved to local storage');
-            await uploadModelToFirebase();
-        }
-
-        async function predict(latestData) {
-            if (!model) {
-                await loadModelFromFirebase();
-            }
-
-            const input = tf.tensor2d(latestData.map(d => [d.open, d.high, d.low, d.close]));
-            const normalizedInput = input.sub(input.min()).div(input.max().sub(input.min()));
-            const reshapedInput = normalizedInput.reshape([1, input.shape[0], 4]);
-
-            const prediction = model.predict(reshapedInput);
-            return prediction.dataSync()[0];
-        }
-
-        async function loadModelFromFirebase() {
-            const modelURL = 'https://firebasestorage.googleapis.com/v0/b/forex-f333c.appspot.com/o/models%2Fforex-model%2Fmodel.json?alt=media';
-
-            model = await tf.loadLayersModel(modelURL);
-            console.log('Model loaded from Firebase Storage');
-        }
-
-        async function updateForexChart(symbol) {
-            const forexData = await fetchForexData(symbol);
-            const ctx = document.getElementById('forexChart').getContext('2d');
-
-            const labels = forexData.map(data => data.date);
-            const data = forexData.map(data => data.close);
-
-            if (forexChartInstance) {
-                forexChartInstance.destroy();
-            }
-
-            forexChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Close Price',
-                        data: data,
-                        borderColor: 'rgb(75, 192, 192)',
-                        fill: false
-                    }]
-                },
-                options: {
-                    scales: {
-                        x: {
-                            type: 'time',
-                            time: {
-                                unit: 'day'
-                            }
+    if (forexChartInstance) {
+        forexChartInstance.data = data;
+        forexChartInstance.update();
+    } else {
+        forexChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: data,
+            options: {
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day'
                         }
                     }
                 }
-            });
-        }
-
-        async function evaluateAndRetrain(symbol) {
-            const forexData = await fetchForexData(symbol);
-            const actualPrices = forexData.slice(-10).map(data => data.close);
-            const predictedPrice = await predict(forexData.slice(-20, -10));
-
-            const mse = tf.losses.meanSquaredError(actualPrices, predictedPrice).dataSync();
-            console.log(`Mean Squared Error: ${mse}`);
-
-            if (mse > 0.01) {
-                console.log('Model performance is suboptimal, retraining...');
-                await createAndTrainModel(forexData);
             }
-        }
-
-        async function generateTradeSignal(prediction, latestPrice) {
-            const riskThreshold = 0.02;
-            const change = (prediction - latestPrice) / latestPrice;
-            const risk = Math.abs(change) > riskThreshold ? 'High' : 'Low';
-            const signal = change > 0 ? 'Buy' : 'Sell';
-
-            document.getElementById('tradeSignal').innerText = `Trade Signal: ${signal}`;
-            document.getElementById('riskManagement').innerText = `Risk Management: ${risk}`;
-
-            console.log(`Trade Signal: ${signal}`);
-            console.log(`Risk Management: ${risk}`);
-        }
-
-        async function updateData() {
-            document.getElementById('loading').style.display = 'block';
-
-            const symbol = document.getElementById('symbolSelector').value;
-            const forexData = await fetchForexData(symbol);
-            const latestData = forexData.slice(-20);
-            const latestPrice = latestData[latestData.length - 1].close;
-
-            document.getElementById('closePrice').innerText = latestPrice;
-            document.getElementById('change').innerText = (latestPrice - latestData[latestData.length - 2].close).toFixed(4);
-            document.getElementById('percentChange').innerText = (((latestPrice - latestData[latestData.length - 2].close) / latestData[latestData.length - 2].close) * 100).toFixed(2) + '%';
-
-            const prediction = await predict(latestData);
-            document.getElementById('aiPrediction').innerText = `AI Prediction: ${prediction.toFixed(4)}`;
-
-            await generateTradeSignal(prediction, latestPrice);
-            await updateForexChart(symbol);
-            await evaluateAndRetrain(symbol);
-
-            document.getElementById('loading').style.display = 'none';
-        }
-
-        document.getElementById('updateButton').addEventListener('click', updateData);
-
-        window.addEventListener('load', () => {
-            updateData();
         });
-    </script>
+    }
+}
+
+function calculateBollingerBands(data, period = 20, multiplier = 2) {
+    const closingPrices = data.map(d => d.close);
+    const sma = closingPrices.map((close, index, arr) => {
+        if (index < period - 1) return null;
+        const slice = arr.slice(index - period + 1, index + 1);
+        return slice.reduce((sum, price) => sum + price, 0) / period;
+    });
+
+    const stdDev = closingPrices.map((close, index, arr) => {
+        if (index < period - 1) return null;
+        const slice = arr.slice(index - period + 1, index + 1);
+        const mean = sma[index];
+        const variance = slice.reduce((sum, price) => sum + Math.pow(price - mean, 2), 0) / period;
+        return Math.sqrt(variance);
+    });
+
+    const upperBand = sma.map((sma, index) => sma + multiplier * stdDev[index]);
+    const lowerBand = sma.map((sma, index) => sma - multiplier * stdDev[index]);
+
+    return { upperBand, lowerBand, sma };
+}
+
+function calculateRSI(data, period = 14) {
+    const gains = [];
+    const losses = [];
+
+    for (let i = 1; i < data.length; i++) {
+        const change = data[i].close - data[i - 1].close;
+        if (change > 0) {
+            gains.push(change);
+            losses.push(0);
+        } else {
+            gains.push(0);
+            losses.push(Math.abs(change));
+        }
+    }
+
+    const avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    const avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+    const rsi = [];
+    let currentGain = avgGain;
+    let currentLoss = avgLoss;
+
+    for (let i = period; i < data.length; i++) {
+        const change = data[i].close - data[i - 1].close;
+        if (change > 0) {
+            currentGain = (currentGain * (period - 1) + change) / period;
+            currentLoss = (currentLoss * (period - 1)) / period;
+        } else {
+            currentGain = (currentGain * (period - 1)) / period;
+            currentLoss = (currentLoss * (period - 1) + Math.abs(change)) / period;
+        }
+
+        const rs = currentGain / currentLoss;
+        rsi.push(100 - (100 / (1 + rs)));
+    }
+
+    return rsi;
+}
+
+function backtest(data, model, tradeSignalGenerator) {
+    let balance = 10000; // Starting balance
+    let position = 0; // No position
+    let tradeHistory = [];
+
+    data.forEach((priceData, index) => {
+        if (index < 10) return; // Skip initial data for moving averages
+
+        const prediction = model.predict(tf.tensor2d(data.slice(index - 10, index).map(d => [d.open, d.high, d.low, d.close])));
+        const tradeSignal = tradeSignalGenerator(prediction.dataSync()[0]);
+
+        if (tradeSignal === 'Buy' && position === 0) {
+            position = balance / priceData.close; // Buy with all balance
+            balance = 0;
+            tradeHistory.push({ action: 'Buy', price: priceData.close, index });
+        } else if (tradeSignal === 'Sell' && position > 0) {
+            balance = position * priceData.close; // Sell all positions
+            position = 0;
+            tradeHistory.push({ action: 'Sell', price: priceData.close, index });
+        }
+    });
+
+    return { balance, tradeHistory };
+}
+
+function applyRiskManagement(balance, position, priceData, stopLoss = 0.05, takeProfit = 0.1) {
+    const initialPrice = position ? balance / position : 0;
+
+    if (position) {
+        if (priceData.close <= initialPrice * (1 - stopLoss)) {
+            balance = position * priceData.close;
+            position = 0;
+            return { balance, position, action: 'Stop Loss' };
+        }
+
+        if (priceData.close >= initialPrice * (1 + takeProfit)) {
+            balance = position * priceData.close;
+            position = 0;
+            return { balance, position, action: 'Take Profit' };
+        }
+    }
+
+    return { balance, position, action: 'Hold' };
+}
+
+function generateTradeSignalWithConfidence(prediction, latestData, rsiPeriod = 14, bollingerPeriod = 20, bollingerMultiplier = 2) {
+    const threshold = 0.32;
+    let signal = 'Hold';
+    let confidence = 0;
+
+    if (latestData.length < Math.max(rsiPeriod, bollingerPeriod)) {
+        console.warn('Not enough data to calculate indicators');
+        return { signal, confidence };
+    }
+
+    // Calculate RSI
+    const rsi = calculateRSI(latestData, rsiPeriod);
+    if (!rsi || rsi.length === 0) {
+        console.warn('RSI calculation failed');
+        return { signal, confidence };
+    }
+    const latestRSI = rsi[rsi.length - 1];
+
+    // Calculate Bollinger Bands
+    const { upperBand, lowerBand, sma } = calculateBollingerBands(latestData, bollingerPeriod, bollingerMultiplier);
+    if (!upperBand || !lowerBand || upperBand.length === 0 || lowerBand.length === 0) {
+        console.warn('Bollinger Bands calculation failed');
+        return { signal, confidence };
+    }
+    const latestClose = latestData[latestData.length - 1].close;
+    const latestUpperBand = upperBand[upperBand.length - 1];
+    const latestLowerBand = lowerBand[lowerBand.length - 1];
+
+    // Define trading signals based on prediction and indicators
+    if (prediction > threshold && latestRSI < 70 && latestClose < latestUpperBand) {
+        signal = 'Buy';
+        confidence = (prediction - threshold) / threshold;
+    } else if (prediction < threshold && latestRSI > 30 && latestClose > latestLowerBand) {
+        signal = 'Sell';
+        confidence = (threshold - prediction) / threshold;
+    } else {
+        confidence = 0;
+    }
+
+    return { signal, confidence };
+}
+
+function updateDataTable(forexData) {
+    const tableBody = document.getElementById('forexDataBody');
+    tableBody.innerHTML = '';
+
+    forexData.forEach(data => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${data.date}</td>
+            <td>${data.open}</td>
+            <td>${data.high}</td>
+            <td>${data.low}</td>
+            <td>${data.close}</td>
+            <td>${data.volume}</td>
+        `;
+        tableBody.appendChild(row);
+    });
+}
+
+document.getElementById('updateButton').addEventListener('click', updateForexData);
+
+// Initial data load
+updateForexData();
+</script>
 </body>
-    </html>
+</html>
